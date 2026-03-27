@@ -3,20 +3,19 @@
 	"id": "moss-keeper",
 	"version": "${version}",
 	"name": "Moss Keeper",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "A passive tortoise-like mob that slowly grows moss on nearby structures.",
 	"authors": [
-		"Me!"
+		"izzulnajmi"
 	],
-	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
-	},
 	"license": "CC0-1.0",
 	"icon": "assets/moss-keeper/icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
 			"com.izzulnajmi.MossKeeper"
+		],
+		"client": [
+			"com.izzulnajmi.MossKeeperClient"
 		]
 	},
 	"mixins": [
