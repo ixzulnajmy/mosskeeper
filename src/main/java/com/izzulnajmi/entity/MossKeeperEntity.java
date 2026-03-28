@@ -4,18 +4,28 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.ai.goal.LookAroundGoal;
 import net.minecraft.entity.ai.goal.LookAtEntityGoal;
 import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
 import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.state.property.Property;
 import net.minecraft.storage.ReadView;
 import net.minecraft.storage.WriteView;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
@@ -92,6 +102,51 @@ public class MossKeeperEntity extends PassiveEntity {
         }
     }
 
+    @Override
+    public ActionResult interactMob(PlayerEntity player, Hand hand) {
+        ItemStack stack = player.getStackInHand(hand);
+        if (stack.isOf(Items.BONE_MEAL)) {
+            if (!this.getEntityWorld().isClient()) {
+                for (int i = 0; i < 5; i++) {
+                    tickMossSpreading();
+                }
+                stack.decrement(1);
+                ServerWorld serverWorld = (ServerWorld) this.getEntityWorld();
+                serverWorld.spawnParticles(ParticleTypes.HAPPY_VILLAGER,
+                        this.getX(), this.getY() + this.getHeight() / 2.0, this.getZ(),
+                        10, 0.5, 0.5, 0.5, 0.1);
+            }
+            return ActionResult.SUCCESS;
+        }
+        if (stack.isOf(Items.SHEARS)) {
+            if (!this.getEntityWorld().isClient()) {
+                mossTick = 0;
+                this.getEntityWorld().playSound(null, this.getBlockPos(),
+                        SoundEvents.BLOCK_GRASS_BREAK, SoundCategory.NEUTRAL, 1.0f, 1.0f);
+                EquipmentSlot slot = hand == Hand.MAIN_HAND ? EquipmentSlot.MAINHAND : EquipmentSlot.OFFHAND;
+                stack.damage(1, player, slot);
+            }
+            return ActionResult.SUCCESS;
+        }
+        return super.interactMob(player, hand);
+    }
+
+    @Override
+    public void onDeath(DamageSource damageSource) {
+        World world = this.getEntityWorld();
+        if (!world.isClient()) {
+            for (BlockPos pos : convertedBlocks) {
+                BlockState current = world.getBlockState(pos);
+                Block revertTo = getRevertBlock(current.getBlock());
+                if (revertTo != null) {
+                    world.setBlockState(pos, copyProperties(current, revertTo), Block.NOTIFY_ALL);
+                }
+            }
+            convertedBlocks.clear();
+        }
+        super.onDeath(damageSource);
+    }
+
     private void tickMossSpreading() {
         World world = this.getEntityWorld();
         BlockPos center = this.getBlockPos();
@@ -101,7 +156,7 @@ public class MossKeeperEntity extends PassiveEntity {
                 center.add(-SCAN_RADIUS, -SCAN_RADIUS, -SCAN_RADIUS),
                 center.add(SCAN_RADIUS, SCAN_RADIUS, SCAN_RADIUS))) {
             Block block = world.getBlockState(pos).getBlock();
-            if (block == Blocks.STONE || block == Blocks.STONE_BRICKS || block == Blocks.COBBLESTONE) {
+            if (getMossTarget(block) != null) {
                 eligible.add(pos.toImmutable());
             }
         }
@@ -109,17 +164,53 @@ public class MossKeeperEntity extends PassiveEntity {
         if (eligible.isEmpty()) return;
 
         BlockPos target = eligible.get(this.random.nextInt(eligible.size()));
-        Block block = world.getBlockState(target).getBlock();
+        BlockState targetState = world.getBlockState(target);
+        Block mossTarget = getMossTarget(targetState.getBlock());
+        if (mossTarget == null) return;
 
-        BlockState newState;
-        if (block == Blocks.COBBLESTONE) {
-            newState = Blocks.MOSSY_COBBLESTONE.getDefaultState();
-        } else {
-            newState = Blocks.MOSSY_STONE_BRICKS.getDefaultState();
-        }
-
-        world.setBlockState(target, newState, Block.NOTIFY_ALL);
+        world.setBlockState(target, copyProperties(targetState, mossTarget), Block.NOTIFY_ALL);
         convertedBlocks.add(target);
+    }
+
+    @Nullable
+    private Block getMossTarget(Block block) {
+        if (block == Blocks.STONE || block == Blocks.STONE_BRICKS) return Blocks.MOSSY_STONE_BRICKS;
+        if (block == Blocks.COBBLESTONE) return Blocks.MOSSY_COBBLESTONE;
+        if (block == Blocks.STONE_BRICK_STAIRS) return Blocks.MOSSY_STONE_BRICK_STAIRS;
+        if (block == Blocks.STONE_BRICK_SLAB) return Blocks.MOSSY_STONE_BRICK_SLAB;
+        if (block == Blocks.STONE_BRICK_WALL) return Blocks.MOSSY_STONE_BRICK_WALL;
+        if (block == Blocks.COBBLESTONE_STAIRS) return Blocks.MOSSY_COBBLESTONE_STAIRS;
+        if (block == Blocks.COBBLESTONE_SLAB) return Blocks.MOSSY_COBBLESTONE_SLAB;
+        if (block == Blocks.COBBLESTONE_WALL) return Blocks.MOSSY_COBBLESTONE_WALL;
+        return null;
+    }
+
+    @Nullable
+    private Block getRevertBlock(Block block) {
+        if (block == Blocks.MOSSY_STONE_BRICKS) return Blocks.STONE_BRICKS;
+        if (block == Blocks.MOSSY_COBBLESTONE) return Blocks.COBBLESTONE;
+        if (block == Blocks.MOSSY_STONE_BRICK_STAIRS) return Blocks.STONE_BRICK_STAIRS;
+        if (block == Blocks.MOSSY_STONE_BRICK_SLAB) return Blocks.STONE_BRICK_SLAB;
+        if (block == Blocks.MOSSY_STONE_BRICK_WALL) return Blocks.STONE_BRICK_WALL;
+        if (block == Blocks.MOSSY_COBBLESTONE_STAIRS) return Blocks.COBBLESTONE_STAIRS;
+        if (block == Blocks.MOSSY_COBBLESTONE_SLAB) return Blocks.COBBLESTONE_SLAB;
+        if (block == Blocks.MOSSY_COBBLESTONE_WALL) return Blocks.COBBLESTONE_WALL;
+        return null;
+    }
+
+    private BlockState copyProperties(BlockState source, Block targetBlock) {
+        BlockState target = targetBlock.getDefaultState();
+        for (Property<?> property : source.getProperties()) {
+            if (target.contains(property)) {
+                target = copyProperty(target, source, property);
+            }
+        }
+        return target;
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T extends Comparable<T>> BlockState copyProperty(BlockState target, BlockState source, Property<T> property) {
+        return target.with(property, source.get(property));
     }
 
     @Override
