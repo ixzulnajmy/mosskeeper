@@ -9,6 +9,8 @@ import net.minecraft.entity.ai.goal.LookAtEntityGoal;
 import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
 import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -23,11 +25,36 @@ import java.util.List;
 
 public class MossKeeperEntity extends PassiveEntity {
 
-    private static final int MOSS_TICK_INTERVAL = 300;
     private static final int SCAN_RADIUS = 8;
 
     private int mossTick = 0;
+    private int glowTick = 0;
     private final List<BlockPos> convertedBlocks = new ArrayList<>();
+
+    public int getGrowthStage() {
+        int count = convertedBlocks.size();
+        if (count == 0) return 0;
+        if (count <= 10) return 1;
+        if (count <= 30) return 2;
+        return 3;
+    }
+
+    public String getStageName() {
+        return switch (getGrowthStage()) {
+            case 0 -> "Settling";
+            case 1 -> "Awakening";
+            case 2 -> "Claiming";
+            default -> "Ancient";
+        };
+    }
+
+    private int getMossTickInterval() {
+        return switch (getGrowthStage()) {
+            case 2 -> 200;
+            case 3 -> 100;
+            default -> 300;
+        };
+    }
 
     public MossKeeperEntity(EntityType<? extends MossKeeperEntity> entityType, World world) {
         super(entityType, world);
@@ -51,9 +78,16 @@ public class MossKeeperEntity extends PassiveEntity {
         super.tick();
         if (!this.getEntityWorld().isClient()) {
             mossTick++;
-            if (mossTick >= MOSS_TICK_INTERVAL) {
+            if (mossTick >= getMossTickInterval()) {
                 mossTick = 0;
                 tickMossSpreading();
+            }
+            glowTick++;
+            if (glowTick >= 100) {
+                glowTick = 0;
+                if (getGrowthStage() >= 2) {
+                    this.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 200, 0, false, false));
+                }
             }
         }
     }
