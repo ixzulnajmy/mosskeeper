@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "moss-keeper:item/moss_keeper_spawn_egg"
+  }
+}

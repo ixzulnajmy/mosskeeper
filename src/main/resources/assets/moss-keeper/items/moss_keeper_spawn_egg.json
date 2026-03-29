@@ -1,6 +1,6 @@
 {
   "model": {
     "type": "minecraft:model",
-    "model": "minecraft:item/template_spawn_egg"
+    "model": "moss-keeper:item/moss_keeper_spawn_egg"
   }
 }
